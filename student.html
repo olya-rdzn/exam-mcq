@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Exam</title>
+  <title>Quiz</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
   <style>
@@ -40,7 +40,7 @@
 <body>
 
   <div id="login" class="box">
-    <h2 id="title">Exam</h2>
+    <h2 id="title">Quiz</h2>
     <p>Enter your full name:</p>
     <input type="text" id="name" placeholder="First & Last Name" autocomplete="off"><br>
     <button class="btn-join" id="join-btn">Join</button>
@@ -67,8 +67,16 @@
   <script>
     const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     const $ = id => document.getElementById(id);
-    document.title = EXAM_TITLE;
-    $('title').innerText = EXAM_TITLE;
+
+    // The title comes from the quiz the teacher chose (falls back to config.js)
+    function setTitle(t) { const T = t || EXAM_TITLE; document.title = T; $('title').innerText = T; }
+    setTitle(null);
+    (async () => {
+      try {
+        const { data } = await db.from('room_state').select('exam_title').eq('id', 1).maybeSingle();
+        if (data && data.exam_title) setTitle(data.exam_title);
+      } catch (e) {}
+    })();
 
     let studentName = "";
     let state = { game_status: 'waiting', current_question: 0, paused: false, results_open: false };
@@ -115,13 +123,14 @@
 
     function render() {
       const s = state;
+      if (s.exam_title) setTitle(s.exam_title);
       if (s.game_status === 'finished') {
         if (s.results_open) {
           $('buttons').classList.add('hidden'); $('msg').classList.add('hidden'); $('review').classList.remove('hidden');
           if (!reviewLoaded) { reviewLoaded = true; loadReview(); }
         } else {
           reviewLoaded = false;
-          showMsg("Exam finished 🙂<small>Your answers are saved. Please wait for the teacher.</small>");
+          showMsg("Finished 🙂<small>Your answers are saved. Please wait for the teacher.</small>");
         }
         return;
       }
@@ -183,7 +192,7 @@
 
       const { data: existing } = await db.from('students').select('name').eq('name', name).maybeSingle();
       if (!existing) {
-        if (st.game_status !== 'waiting') { $('login-err').innerText = "The exam has already started — joining is closed."; return; }
+        if (st.game_status !== 'waiting') { $('login-err').innerText = "It has already started — joining is closed."; return; }
         const { error } = await db.from('students').insert([{ name }]);
         if (error && error.code !== '23505') { $('login-err').innerText = "Could not join: " + error.message; return; }
       }
