@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Exam</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <style>
+    :root { --bg:#f4efe4; --card:#fffdf8; --ink:#1f2937; --muted:#6b7280; --line:#e3dccb; --accent:#0f5c63;
+            --a:#b4512d; --b:#2b4c7e; --c:#5f7428; --d:#7a3b69; --ok:#2f7d32; --bad:#b3261e; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 14px; background: var(--bg); color: var(--ink); text-align: center;
+           font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+    h2 { font-family: Georgia, 'Iowan Old Style', serif; font-weight: 600; }
+    .box { margin-top: 14vh; }
+    input { padding: 15px; font-size: 1.2rem; border-radius: 10px; border: 1px solid var(--line); width: 88%; max-width: 340px; margin-bottom: 18px; background: #fff; }
+    .btn-join { padding: 15px 34px; font-size: 1.2rem; background: var(--accent); color: #fff; border: none; border-radius: 10px; font-weight: 600; }
+    .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; height: 82vh; }
+    .btn-opt { border: none; border-radius: 16px; font-size: 4rem; color: #fff; font-weight: 700; font-family: Georgia, serif; }
+    .btn-opt:active { filter: brightness(1.25); }
+    .opt-0 { background: var(--a); } .opt-1 { background: var(--b); }
+    .opt-2 { background: var(--c); } .opt-3 { background: var(--d); }
+    .msg { font-family: Georgia, serif; font-size: 1.7rem; margin-top: 26vh; color: var(--accent); line-height: 1.5; }
+    .msg small { display: block; font-family: system-ui, sans-serif; font-size: 1rem; color: var(--muted); margin-top: 10px; }
+    .err { color: var(--bad); font-size: 1.05rem; margin-top: 12px; min-height: 1.4em; }
+    .hidden { display: none; }
+    /* review */
+    #review { max-width: 640px; margin: 0 auto; text-align: left; }
+    .score { text-align: center; font-family: Georgia, serif; font-size: 2.2rem; margin: 12px 0 4px; }
+    .score-sub { text-align: center; color: var(--muted); margin-bottom: 18px; }
+    .item { background: var(--card); border: 1px solid var(--line); border-left: 6px solid var(--ok); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+    .item.wrong { border-left-color: var(--bad); }
+    .item .q { font-family: Georgia, serif; font-size: 1.05rem; margin-bottom: 6px; }
+    .item .mine { font-size: .95rem; }
+    .item .right { font-size: .95rem; color: var(--ok); font-weight: 600; margin-top: 2px; }
+    .tag { font-weight: 700; margin-right: 6px; }
+  </style>
+</head>
+<body>
+
+  <div id="login" class="box">
+    <h2 id="title">Exam</h2>
+    <p>Enter your full name:</p>
+    <input type="text" id="name" placeholder="First & Last Name" autocomplete="off"><br>
+    <button class="btn-join" id="join-btn">Join</button>
+    <div class="err" id="login-err"></div>
+  </div>
+
+  <div id="buttons" class="btn-grid hidden">
+    <button class="btn-opt opt-0" data-i="0">A</button>
+    <button class="btn-opt opt-1" data-i="1">B</button>
+    <button class="btn-opt opt-2" data-i="2">C</button>
+    <button class="btn-opt opt-3" data-i="3">D</button>
+  </div>
+
+  <div id="msg" class="msg hidden"></div>
+
+  <div id="review" class="hidden">
+    <div class="score" id="score"></div>
+    <div class="score-sub" id="score-sub"></div>
+    <div id="review-list"></div>
+  </div>
+
+  <div class="err" id="game-err"></div>
+
+  <script>
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const $ = id => document.getElementById(id);
+    document.title = EXAM_TITLE;
+    $('title').innerText = EXAM_TITLE;
+
+    let studentName = "";
+    let state = { game_status: 'waiting', current_question: 0, paused: false, results_open: false };
+    const answered = new Set();
+    let sending = false, reviewLoaded = false, joined = false;
+
+    // ---- keep the phone screen awake ----
+    let wakeLock = null;
+    async function keepAwake() {
+      try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+    }
+    // ---- focus log: note when the page goes to the background DURING a live question ----
+    let leftAt = 0, leftQ = 0;
+    const pendingFocus = [];
+    async function flushFocus() {
+      while (pendingFocus.length) {
+        const { error } = await db.from('focus_log').insert([pendingFocus[0]]);
+        if (error) return;            // try again later
+        pendingFocus.shift();
+      }
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (!joined) return;
+      if (document.visibilityState === 'hidden') {
+        if (state.game_status === 'active' && !state.paused && state.current_question !== 0) {
+          leftAt = Date.now(); leftQ = state.current_question;
+        }
+      } else {
+        keepAwake(); fetchState();
+        if (leftAt) {
+          const sec = Math.round((Date.now() - leftAt) / 1000);
+          if (sec >= 3) pendingFocus.push({ student_name: studentName, question_id: leftQ, seconds: sec });
+          leftAt = 0;
+        }
+        flushFocus();
+      }
+    });
+
+    // ---- what to show ----
+    function showMsg(html) {
+      $('buttons').classList.add('hidden'); $('review').classList.add('hidden');
+      $('msg').innerHTML = html; $('msg').classList.remove('hidden');
+    }
+
+    function render() {
+      const s = state;
+      if (s.game_status === 'finished') {
+        if (s.results_open) {
+          $('buttons').classList.add('hidden'); $('msg').classList.add('hidden'); $('review').classList.remove('hidden');
+          if (!reviewLoaded) { reviewLoaded = true; loadReview(); }
+        } else {
+          reviewLoaded = false;
+          showMsg("Exam finished 🙂<small>Your answers are saved. Please wait for the teacher.</small>");
+        }
+        return;
+      }
+      reviewLoaded = false;
+      if (s.game_status === 'waiting') return showMsg("You're in!<small>Waiting for the teacher to start…</small>");
+      if (s.paused) return showMsg("⏸ Paused<small>Please wait. Do not close this page.</small>");
+      if (s.current_question === 0) return showMsg("Get ready…<small>The next question is coming.</small>");
+      if (answered.has(s.current_question)) return showMsg("✔ Answer submitted<small>Look at the screen.</small>");
+      $('msg').classList.add('hidden'); $('review').classList.add('hidden'); $('buttons').classList.remove('hidden');
+    }
+
+    async function fetchState() {
+      const { data } = await db.from('room_state').select('*').eq('id', 1).maybeSingle();
+      if (data) { state = data; render(); }
+    }
+
+    async function loadMyAnswers() {
+      const { data } = await db.from('submissions').select('question_id,selected_option').eq('student_name', studentName);
+      (data || []).forEach(r => { if (r.selected_option >= 0) answered.add(r.question_id); });
+    }
+
+    // ---- review of own results ----
+    async function loadReview() {
+      const { data, error } = await db.from('submissions').select('*').eq('student_name', studentName).order('q_number');
+      if (error || !data || !data.length) { reviewLoaded = false; $('score').innerText = "Results are not available yet."; return; }
+      const total = data.length, got = data.filter(r => r.is_correct).length;
+      $('score').innerText = `${got} / ${total}`;
+      $('score-sub').innerText = `${Math.round(100 * got / total)}% correct`;
+      const list = $('review-list'); list.innerHTML = "";
+      data.forEach(r => {
+        const item = document.createElement('div');
+        item.className = 'item' + (r.is_correct ? '' : ' wrong');
+        const q = document.createElement('div'); q.className = 'q'; q.textContent = `${r.q_number}. ${r.question_text || ''}`;
+        const mine = document.createElement('div'); mine.className = 'mine';
+        const tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = r.is_correct ? '✔' : '✘';
+        tag.style.color = r.is_correct ? 'var(--ok)' : 'var(--bad)';
+        mine.appendChild(tag);
+        mine.appendChild(document.createTextNode(r.selected_text ? `Your answer: ${r.selected_text}` : 'No answer'));
+        item.appendChild(q); item.appendChild(mine);
+        if (!r.is_correct) {
+          const right = document.createElement('div'); right.className = 'right';
+          right.textContent = `Correct answer: ${r.correct_text || ''}`;
+          item.appendChild(right);
+        }
+        list.appendChild(item);
+      });
+    }
+
+    // ---- joining ----
+    async function joinRoom() {
+      const name = $('name').value.trim().replace(/\s+/g, ' ');
+      if (!name) { $('login-err').innerText = "Please enter your name."; return; }
+      $('login-err').innerText = "";
+      studentName = name;
+      keepAwake();
+
+      const { data: st, error: e0 } = await db.from('room_state').select('*').eq('id', 1).maybeSingle();
+      if (e0 || !st) { $('login-err').innerText = "Cannot connect. Please try again."; return; }
+
+      const { data: existing } = await db.from('students').select('name').eq('name', name).maybeSingle();
+      if (!existing) {
+        if (st.game_status !== 'waiting') { $('login-err').innerText = "The exam has already started — joining is closed."; return; }
+        const { error } = await db.from('students').insert([{ name }]);
+        if (error && error.code !== '23505') { $('login-err').innerText = "Could not join: " + error.message; return; }
+      }
+      try { localStorage.setItem('examName', name); } catch (e) {}
+
+      joined = true;
+      $('login').classList.add('hidden');
+      await loadMyAnswers();
+      state = st; render();
+
+      db.channel('room').on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'room_state' },
+        payload => { state = payload.new; render(); }).subscribe();
+      setInterval(() => { fetchState(); flushFocus(); }, 3000);   // safety net if a realtime message is missed
+    }
+
+    // ---- answering ----
+    async function submitAnswer(i) {
+      const qid = state.current_question;
+      if (sending || state.paused || state.game_status !== 'active' || qid === 0 || answered.has(qid)) return;
+      sending = true; $('game-err').innerText = "";
+
+      const { error } = await db.from('submissions').insert([
+        { student_name: studentName, question_id: qid, selected_option: i }
+      ]);
+      sending = false;
+
+      if (error && error.code !== '23505') { $('game-err').innerText = "Not sent — please tap again."; return; }
+      answered.add(qid); render();
+    }
+
+    $('join-btn').addEventListener('click', joinRoom);
+    $('name').addEventListener('keydown', e => { if (e.key === 'Enter') joinRoom(); });
+    document.querySelectorAll('.btn-opt').forEach(b =>
+      b.addEventListener('click', () => submitAnswer(Number(b.dataset.i))));
+
+    // After a refresh: auto-rejoin only if this name is already in the CURRENT session
+    (async () => {
+      try {
+        const saved = localStorage.getItem('examName');
+        if (!saved) return;
+        $('name').value = saved;
+        const { data } = await db.from('students').select('name').eq('name', saved).maybeSingle();
+        if (data) joinRoom();
+      } catch (e) {}
+    })();
+  </script>
+</body>
+</html>

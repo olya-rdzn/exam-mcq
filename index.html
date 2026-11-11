@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Exam host</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="config.js"></script>
+  <style>
+    :root { --bg:#f4efe4; --card:#fffdf8; --ink:#1f2937; --muted:#6b7280; --line:#e3dccb; --accent:#0f5c63;
+            --a:#b4512d; --b:#2b4c7e; --c:#5f7428; --d:#7a3b69; --ok:#2f7d32; --bad:#b3261e; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px; background: var(--bg); color: var(--ink); text-align: center;
+           font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+    h1, h2, .serif { font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif; font-weight: 600; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 34px;
+            max-width: 1150px; margin: 0 auto 20px; box-shadow: 0 2px 14px rgba(31,41,55,.06); }
+    .hidden { display: none !important; }
+    .muted { color: var(--muted); }
+
+    button, .btn { background: var(--accent); color: #fff; border: none; padding: 16px 34px; font-size: 1.15rem;
+                   font-weight: 600; border-radius: 12px; cursor: pointer; margin: 6px; }
+    button:disabled { background: #b9b4a6; cursor: not-allowed; }
+    button.ghost { background: transparent; color: var(--accent); border: 2px solid var(--accent); padding: 10px 20px; font-size: 1rem; }
+    button.danger { background: var(--bad); }
+    button.link { background: none; color: var(--muted); text-decoration: underline; font-weight: 400; font-size: .9rem; padding: 4px; }
+
+    #errors { background: #fbe9e7; border: 1px solid #e6b3ac; color: #7a1f17; padding: 14px; border-radius: 12px; max-width: 1150px; margin: 0 auto 20px; text-align: left; }
+
+    /* lobby */
+    #qrcode { background: #fff; padding: 14px; display: inline-block; border-radius: 12px; border: 1px solid var(--line); margin: 10px 0; }
+    .url { color: var(--muted); font-size: .9rem; word-break: break-all; }
+    .chips { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 18px 0; min-height: 44px; }
+    .chip { background: #efe8d6; border-radius: 999px; padding: 8px 18px; font-size: 1.1rem; }
+
+    /* game */
+    .topbar { display: flex; justify-content: space-between; align-items: center; }
+    .timer-row { display: flex; align-items: center; gap: 18px; margin: 10px 0 6px; }
+    .timer { font-family: Georgia, serif; font-size: 2.6rem; min-width: 70px; color: var(--accent); }
+    .bar-wrap { flex: 1; height: 12px; background: #ece5d3; border-radius: 6px; overflow: hidden; }
+    #bar { height: 100%; width: 100%; background: var(--accent); transition: width .2s linear; }
+    #q-text { font-size: 2.3rem; line-height: 1.3; margin: 22px 0 10px; }
+    #q-image { max-height: 38vh; max-width: 100%; border-radius: 10px; margin: 8px auto; display: block; }
+    .counter { font-size: 1.3rem; color: var(--muted); margin: 10px 0; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 20px; }
+    .option { display: flex; align-items: center; gap: 18px; padding: 22px 26px; font-size: 1.7rem; border-radius: 14px; color: #fff; text-align: left; }
+    .option .letter { flex: none; width: 54px; height: 54px; border-radius: 50%; border: 3px solid rgba(255,255,255,.85);
+                      display: flex; align-items: center; justify-content: center; font-family: Georgia, serif; font-weight: 700; font-size: 1.7rem; }
+    .opt-0 { background: var(--a); } .opt-1 { background: var(--b); } .opt-2 { background: var(--c); } .opt-3 { background: var(--d); }
+
+    /* countdown overlay */
+    #countdown { position: fixed; inset: 0; background: rgba(244,239,228,.97); z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    #count-num { font-family: Georgia, serif; font-size: 10rem; color: var(--accent); line-height: 1; }
+
+    /* results */
+    table { border-collapse: collapse; margin: 18px auto; font-size: .95rem; }
+    th, td { border: 1px solid var(--line); padding: 6px 10px; }
+    th { background: #efe8d6; }
+    td.name { text-align: left; white-space: nowrap; }
+    td.l { text-align: left; }
+    td.focus { text-align: left; font-size: .85rem; color: var(--d); white-space: nowrap; }
+    .ok { color: var(--ok); font-weight: 700; } .bad { color: var(--bad); font-weight: 700; } .none { color: #9aa1ad; }
+
+    /* danger zone */
+    #danger { max-width: 1150px; margin: 30px auto 0; text-align: left; color: var(--muted); }
+    #danger summary { cursor: pointer; font-size: .9rem; }
+    #danger .inner { margin-top: 10px; padding: 16px; border: 1px dashed var(--bad); border-radius: 12px; background: #fff7f5; }
+    #del-input { padding: 10px; font-size: 1rem; border: 1px solid var(--line); border-radius: 8px; }
+  </style>
+</head>
+<body>
+
+  <div id="errors" class="hidden"></div>
+
+  <!-- Load exam file -->
+  <div class="card hidden" id="setup">
+    <h1>Load your exam</h1>
+    <p class="muted">Choose your <b>questions.js</b> file. If a question uses images, select those image files at the same time.</p>
+    <input type="file" id="exam-files" multiple accept=".js,image/*">
+  </div>
+
+  <!-- Lobby -->
+  <div class="card hidden" id="lobby">
+    <h1 id="lobby-title"></h1>
+    <p>Scan the QR code to join on your phone:</p>
+    <div id="qrcode"></div>
+    <div class="url" id="url-text"></div>
+    <h3 style="margin-top:22px;">Students joined: <span id="student-count">0</span></h3>
+    <div class="chips" id="chips"></div>
+    <button id="start-btn" onclick="beginCountdown()" disabled>Start exam</button>
+    <div class="muted" id="exam-info" style="margin-top:10px;"></div>
+    <button class="link" onclick="changeExam()">Load a different exam file</button>
+  </div>
+
+  <!-- Question screen -->
+  <div class="card hidden" id="game">
+    <div class="topbar">
+      <h2 id="q-number" style="margin:0;"></h2>
+      <button class="ghost" onclick="pauseGame()">⏸ Pause</button>
+    </div>
+    <div class="timer-row"><div class="timer" id="timer"></div><div class="bar-wrap"><div id="bar"></div></div></div>
+    <div id="q-text" class="serif"></div>
+    <img id="q-image" class="hidden" alt="">
+    <div class="counter">Answers received: <span id="answer-count">0</span> / <span id="total-connected">0</span></div>
+    <div class="grid">
+      <div class="option opt-0"><span class="letter">A</span><span id="opt-0"></span></div>
+      <div class="option opt-1"><span class="letter">B</span><span id="opt-1"></span></div>
+      <div class="option opt-2"><span class="letter">C</span><span id="opt-2"></span></div>
+      <div class="option opt-3"><span class="letter">D</span><span id="opt-3"></span></div>
+    </div>
+  </div>
+
+  <!-- Paused -->
+  <div class="card hidden" id="paused">
+    <h1 style="font-size:3rem;">⏸ Paused</h1>
+    <p class="muted">The exam is paused. No question is shown.</p>
+    <button onclick="resumeGame()">▶ Resume</button>
+  </div>
+
+  <!-- Finished (results hidden) -->
+  <div class="card hidden" id="finished">
+    <h1>Exam finished</h1>
+    <p id="fin-status" class="muted">Saving answers…</p>
+    <button id="see-btn" onclick="showResults()" disabled>See results</button>
+    <button class="ghost" id="csv-fin" onclick="downloadCsv()" disabled>Download CSV</button>
+  </div>
+
+  <!-- Results -->
+  <div class="card hidden" id="results">
+    <h1>Results</h1>
+    <div id="results-table" style="overflow-x:auto;"></div>
+    <h2>Question statistics</h2>
+    <div id="stats-table" style="overflow-x:auto;"></div>
+    <button class="ghost" id="focus-btn" onclick="toggleFocus()">Show focus log</button>
+    <button class="ghost" onclick="hideResults()">Hide results</button>
+    <button onclick="downloadCsv()">Download CSV</button>
+  </div>
+
+  <!-- Danger zone -->
+  <div id="danger" class="hidden">
+    <details>
+      <summary>Danger zone</summary>
+      <div class="inner">
+        <p>This <b>permanently erases all students and answers</b> from the database and starts a new session. Download the CSV first.</p>
+        <input id="del-input" placeholder="Type DELETE" autocomplete="off">
+        <button class="danger" id="del-btn" disabled onclick="newSession()">Erase everything and start a new session</button>
+      </div>
+    </details>
+  </div>
+
+  <!-- Start countdown -->
+  <div id="countdown" class="hidden">
+    <div class="muted" style="font-size:1.5rem;">Starting in</div>
+    <div id="count-num">5</div>
+    <button class="ghost" onclick="cancelCountdown()" style="margin-top:30px;">Cancel</button>
+  </div>
+
+  <script>
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const $ = id => document.getElementById(id);
+    const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const LET = ['A', 'B', 'C', 'D'];
+    document.title = EXAM_TITLE;
+
+    let EXAM = null, N = 0, imageFiles = {};
+    let currentQIndex = 0, timerInterval = null, deadline = 0, remainingMs = 0;
+    let totalStudents = 0, answersReceived = 0;
+    let examRunning = false, advancing = false, paused = false, pendingNext = false;
+    let countdownTimer = null, lobbyReady = false, qrDone = false;
+    let lastData = null, showFocus = false;
+    function focusText(f) { return f.length ? `${f.length}× (${f.map(x => `Q${x.n} ${x.sec}s`).join(', ')})` : '—'; }
+
+    // ---------- screens ----------
+    function show(id) {
+      ['setup', 'lobby', 'game', 'paused', 'finished', 'results'].forEach(x => $(x).classList.toggle('hidden', x !== id));
+      $('danger').classList.toggle('hidden', !['lobby', 'finished', 'results'].includes(id));
+    }
+    function showErrors(list) { $('errors').innerHTML = list.map(esc).join("<br>"); $('errors').classList.remove('hidden'); }
+    function clearErrors() { $('errors').classList.add('hidden'); }
+
+    // ---------- keep tablet awake ----------
+    let wakeLock = null;
+    async function keepAwake() { try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {} }
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(); });
+
+    // ---------- loading the exam ----------
+    function validate(q) {
+      const problems = [], ids = new Set();
+      q.forEach((x, i) => {
+        const L = `Question #${i + 1}`;
+        if (!Number.isInteger(x.id) || x.id < 1) problems.push(`${L}: id must be a whole number ≥ 1`);
+        if (ids.has(x.id)) problems.push(`${L}: duplicate id ${x.id}`);
+        ids.add(x.id);
+        if (typeof x.question !== 'string' || !x.question.trim()) problems.push(`${L}: question text is empty`);
+        if (!Array.isArray(x.options) || x.options.length !== 4 || x.options.some(o => typeof o !== 'string' || !o.trim()))
+          problems.push(`${L}: needs exactly 4 non-empty options`);
+        if (![0, 1, 2, 3].includes(x.correctIndex)) problems.push(`${L}: correctIndex must be 0, 1, 2 or 3`);
+        if (x.image !== undefined && typeof x.image !== 'string') problems.push(`${L}: image must be text`);
+      });
+      return problems;
+    }
+
+    function applyExam(text) {
+      let q;
+      try { q = new Function(text + '\n;return (typeof EXAM_QUESTIONS !== "undefined") ? EXAM_QUESTIONS : null;')(); }
+      catch (err) { showErrors(['Syntax error in the questions file: ' + err.message]); return false; }
+      if (!Array.isArray(q) || !q.length) { showErrors(['The file must define EXAM_QUESTIONS as a non-empty list.']); return false; }
+      const problems = validate(q);
+      if (problems.length) { showErrors(['Fix the questions file:'].concat(problems)); return false; }
+      EXAM = q; N = q.length; clearErrors();
+      return true;
+    }
+
+    async function autoLoad() {
+      try { const t = localStorage.getItem('examJs'); if (t && applyExam(t)) return true; } catch (e) {}
+      try { const r = await fetch('questions.js?t=' + Date.now()); if (r.ok && applyExam(await r.text())) return true; } catch (e) {}
+      return false;
+    }
+
+    $('exam-files').addEventListener('change', async e => {
+      const files = [...e.target.files];
+      const js = files.find(f => /\.js$/i.test(f.name));
+      if (!js) { showErrors(['Please include your questions.js file in the selection.']); return; }
+      imageFiles = {};
+      files.filter(f => f !== js && f.type.startsWith('image/')).forEach(f => imageFiles[f.name] = URL.createObjectURL(f));
+      const text = await js.text();
+      if (applyExam(text)) { try { localStorage.setItem('examJs', text); } catch (err) {} await route(); }
+    });
+
+    function changeExam() {
+      try { localStorage.removeItem('examJs'); } catch (e) {}
+      EXAM = null; $('exam-files').value = ""; show('setup');
+    }
+
+    function imageSrc(name) { return imageFiles[name.split('/').pop()] || name; }
+
+    // ---------- startup / routing ----------
+    async function init() {
+      keepAwake();
+      if (await autoLoad()) await route(); else show('setup');
+    }
+
+    async function route() {
+      const { data: st0, error } = await db.from('room_state').select('*').eq('id', 1).maybeSingle();
+      if (error) { showErrors(['Cannot reach Supabase: ' + error.message]); return; }
+      let st = st0;
+      if (!st) {
+        const r = await db.from('room_state').insert({ id: 1, current_question: 0, game_status: 'waiting', total_students: 0 }).select().maybeSingle();
+        if (r.error || !r.data) { showErrors(['The room_state row is missing and could not be created.']); return; }
+        st = r.data;
+      }
+      if (st.paused === undefined || st.results_open === undefined) {
+        showErrors(['The database needs the update script: run setup2.sql in Supabase › SQL Editor, then reload this page.']); return;
+      }
+      const fl = await db.from('focus_log').select('id').limit(1);
+      if (fl.error) { showErrors(['The database needs the update script: run setup2.sql in Supabase › SQL Editor, then reload this page.']); return; }
+      if (st.game_status === 'waiting') enterLobby(); else enterFinished(st);
+    }
+
+    // ---------- lobby ----------
+    async function enterLobby() {
+      show('lobby');
+      $('lobby-title').innerText = EXAM_TITLE;
+      $('url-text').innerText = STUDENT_URL;
+      $('exam-info').innerText = `${N} questions · ${SECONDS_PER_QUESTION} s each`;
+      if (!qrDone) { new QRCode($('qrcode'), { text: STUDENT_URL, width: 230, height: 230 }); qrDone = true; }
+      await refreshLobby();
+      if (!lobbyReady) {
+        lobbyReady = true;
+        db.channel('students-watch').on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, refreshLobby).subscribe();
+        db.channel('submissions-watch').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'submissions' }, onSubmission).subscribe();
+      }
+    }
+
+    async function refreshLobby() {
+      if (examRunning) return;
+      const { data } = await db.from('students').select('name').order('joined_at');
+      const names = (data || []).map(r => r.name);
+      totalStudents = names.length;
+      $('student-count').innerText = names.length;
+      $('total-connected').innerText = names.length;
+      $('chips').innerHTML = names.map(n => `<span class="chip">${esc(n)}</span>`).join("");
+      $('start-btn').disabled = names.length === 0;
+    }
+
+    // ---------- start (with countdown + cancel) ----------
+    function beginCountdown() {
+      keepAwake();
+      let n = START_COUNTDOWN;
+      $('count-num').innerText = n;
+      $('countdown').classList.remove('hidden');
+      clearInterval(countdownTimer);
+      countdownTimer = setInterval(() => {
+        n--;
+        if (n <= 0) { clearInterval(countdownTimer); $('countdown').classList.add('hidden'); startGame(); }
+        else $('count-num').innerText = n;
+      }, 1000);
+    }
+    function cancelCountdown() { clearInterval(countdownTimer); $('countdown').classList.add('hidden'); }
+
+    async function startGame() {
+      await refreshLobby();
+      if (totalStudents === 0) return;
+      examRunning = true; paused = false; pendingNext = false; currentQIndex = 0;
+      await db.from('room_state').update({ game_status: 'active', current_question: 0, paused: false, results_open: false, total_students: totalStudents }).eq('id', 1);
+      show('game');
+      loadQuestion();
+    }
+
+    // ---------- questions ----------
+    async function loadQuestion() {
+      if (currentQIndex >= N) return finishExam();
+      show('game');
+      const q = EXAM[currentQIndex];
+      $('q-number').innerText = `Question ${currentQIndex + 1} of ${N}`;
+      $('q-text').innerText = q.question;
+      for (let i = 0; i < 4; i++) $('opt-' + i).innerText = q.options[i];
+      if (q.image) { $('q-image').src = imageSrc(q.image); $('q-image').classList.remove('hidden'); }
+      else { $('q-image').classList.add('hidden'); $('q-image').removeAttribute('src'); }
+
+      answersReceived = 0; advancing = false;
+      $('answer-count').innerText = "0";
+      $('total-connected').innerText = totalStudents;
+
+      await db.from('room_state').update({ current_question: q.id }).eq('id', 1);
+      startTimer(SECONDS_PER_QUESTION * 1000);
+    }
+
+    function startTimer(ms) {
+      deadline = Date.now() + ms;
+      clearInterval(timerInterval);
+      timerInterval = setInterval(tick, 200);
+      tick();
+    }
+    function tick() {
+      const left = Math.max(0, deadline - Date.now());
+      $('timer').innerText = Math.ceil(left / 1000);
+      $('bar').style.width = (100 * left / (SECONDS_PER_QUESTION * 1000)) + '%';
+      if (left <= 0) endQuestion();
+    }
+
+    function onSubmission(payload) {
+      if (!examRunning || advancing || !EXAM[currentQIndex]) return;
+      if (payload.new.question_id !== EXAM[currentQIndex].id) return;
+      answersReceived++;
+      $('answer-count').innerText = answersReceived;
+      if (!paused && totalStudents > 0 && answersReceived >= totalStudents) endQuestion();
+    }
+
+    async function endQuestion() {
+      if (advancing) return;
+      advancing = true;
+      clearInterval(timerInterval);
+      await db.from('room_state').update({ current_question: 0 }).eq('id', 1);   // locks phone buttons
+      currentQIndex++;
+      setTimeout(() => { if (paused) pendingNext = true; else loadQuestion(); }, 1500);
+    }
+
+    // ---------- pause / resume ----------
+    async function pauseGame() {
+      if (!examRunning || paused) return;
+      paused = true;
+      remainingMs = Math.max(0, deadline - Date.now());
+      clearInterval(timerInterval);
+      show('paused');                     // question hidden immediately
+      await db.from('room_state').update({ paused: true }).eq('id', 1);
+    }
+
+    async function resumeGame() {
+      if (!paused) return;
+      paused = false;
+      await db.from('room_state').update({ paused: false }).eq('id', 1);
+      show('game');
+      if (pendingNext) { pendingNext = false; loadQuestion(); return; }
+      if (advancing) return;              // the next question is about to load by itself
+      const { count } = await db.from('submissions').select('*', { count: 'exact', head: true }).eq('question_id', EXAM[currentQIndex].id);
+      answersReceived = count || 0;
+      $('answer-count').innerText = answersReceived;
+      if (answersReceived >= totalStudents || remainingMs <= 0) { endQuestion(); return; }
+      startTimer(remainingMs);
+    }
+
+    // ---------- finishing + scoring ----------
+    async function finishExam() {
+      examRunning = false; clearInterval(timerInterval);
+      show('finished');
+      await db.from('room_state').update({ game_status: 'finished', current_question: 0, paused: false, results_open: false }).eq('id', 1);
+      await runScoring();
+    }
+
+    async function enterFinished(st) {
+      examRunning = false;
+      show('finished');
+      await db.from('room_state').update({ results_open: false }).eq('id', 1);
+      $('fin-status').innerText = (st.game_status === 'active' ? 'An interrupted session was found. ' : 'A finished session was found. ') + 'Saving answers…';
+      await runScoring();
+    }
+
+    async function runScoring() {
+      $('see-btn').disabled = true; $('csv-fin').disabled = true;
+      const { data: students, error: e1 } = await db.from('students').select('name').order('name');
+      const { data: subs, error: e2 } = await db.from('submissions').select('student_name,question_id,selected_option');
+      if (e1 || e2) { $('fin-status').innerText = "Could not read data: " + (e1 || e2).message; return; }
+
+      // focus log: who left the page during which question
+      const { data: focusRows } = await db.from('focus_log').select('student_name,question_id,seconds').order('created_at');
+      const focusByName = {};
+      (focusRows || []).forEach(f => {
+        const idx = EXAM.findIndex(q => q.id === f.question_id);
+        if (idx < 0) return;
+        (focusByName[f.student_name] = focusByName[f.student_name] || []).push({ n: idx + 1, sec: f.seconds });
+      });
+
+      const given = {};
+      (subs || []).forEach(s => { if (!given[s.student_name]) given[s.student_name] = {}; given[s.student_name][s.question_id] = s.selected_option; });
+
+      const rows = [], list = [];
+      const counts = EXAM.map(() => [0, 0, 0, 0]), noAns = EXAM.map(() => 0), right = EXAM.map(() => 0);
+
+      (students || []).forEach(st => {
+        const per = [], picks = [];
+        EXAM.forEach((q, i) => {
+          const g = given[st.name] ? given[st.name][q.id] : undefined;
+          const picked = (g === undefined || g < 0) ? -1 : g;
+          const correct = picked === q.correctIndex;
+          picks.push(picked);
+          per.push(picked < 0 ? null : correct);
+          if (picked < 0) noAns[i]++; else counts[i][picked]++;
+          if (correct) right[i]++;
+          rows.push({
+            student_name: st.name, question_id: q.id, q_number: i + 1,
+            selected_option: picked, is_correct: correct, correct_option: q.correctIndex,
+            question_text: q.question,
+            selected_text: picked < 0 ? null : `${LET[picked]}. ${q.options[picked]}`,
+            correct_text: `${LET[q.correctIndex]}. ${q.options[q.correctIndex]}`
+          });
+        });
+        list.push({ name: st.name, per, picks, score: per.filter(v => v === true).length, focus: focusByName[st.name] || [] });
+      });
+
+      for (let i = 0; i < rows.length; i += 400) {
+        const { error } = await db.from('submissions').upsert(rows.slice(i, i + 400), { onConflict: 'student_name,question_id' });
+        if (error) { $('fin-status').innerText = "Could not save marks: " + error.message; return; }
+      }
+
+      const stats = EXAM.map((q, i) => {
+        let top = -1, topN = 0;
+        counts[i].forEach((c, k) => { if (k !== q.correctIndex && c > topN) { top = k; topN = c; } });
+        return {
+          n: i + 1, question: q.question,
+          pct: list.length ? Math.round(100 * right[i] / list.length) : 0,
+          wrongText: top >= 0 ? `${LET[top]}. ${q.options[top]}` : '—', wrongCount: topN, noAnswer: noAns[i]
+        };
+      });
+
+      lastData = { list, stats };
+      $('fin-status').innerText = `Answers saved in Supabase ✓ (${list.length} students). Results are hidden until you click “See results”.`;
+      $('see-btn').disabled = false; $('csv-fin').disabled = false;
+    }
+
+    // ---------- results ----------
+    async function showResults() {
+      if (!lastData) return;
+      await db.from('room_state').update({ results_open: true }).eq('id', 1);
+      let h = "<table><tr><th>Student</th><th>Score</th>" + EXAM.map((q, i) => `<th title="${esc(q.question)}">Q${i + 1}</th>`).join("") + (showFocus ? "<th>Left the page</th>" : "") + "</tr>";
+      lastData.list.forEach(r => {
+        h += `<tr><td class="name">${esc(r.name)}</td><td><b>${r.score} / ${N}</b></td>` +
+          r.per.map(v => v === true ? '<td class="ok">✔</td>' : v === false ? '<td class="bad">✘</td>' : '<td class="none">–</td>').join("") +
+          (showFocus ? `<td class="focus">${esc(focusText(r.focus))}</td>` : "") + "</tr>";
+      });
+      $('results-table').innerHTML = h + "</table>";
+
+      let s = "<table><tr><th>Q</th><th>Question</th><th>% correct</th><th>Most chosen wrong answer</th><th>No answer</th></tr>";
+      lastData.stats.forEach(x => {
+        s += `<tr><td>${x.n}</td><td class="l">${esc(x.question)}</td><td><b>${x.pct}%</b></td>` +
+          `<td class="l">${esc(x.wrongText)}${x.wrongCount ? ` (${x.wrongCount})` : ''}</td><td>${x.noAnswer}</td></tr>`;
+      });
+      $('stats-table').innerHTML = s + "</table>";
+      show('results');
+    }
+
+    function toggleFocus() {
+      showFocus = !showFocus;
+      $('focus-btn').innerText = showFocus ? 'Hide focus log' : 'Show focus log';
+      showResults();
+    }
+
+    async function hideResults() {
+      showFocus = false; $('focus-btn').innerText = 'Show focus log';   // never carried over to the next showing
+      await db.from('room_state').update({ results_open: false }).eq('id', 1);
+      show('finished');
+    }
+
+    function downloadCsv() {
+      if (!lastData) return;
+      const q = s => `"${String(s).replace(/"/g, '""')}"`;
+      const lines = [["Name", "Score", "Total", "Percent", ...EXAM.map((x, i) => "Q" + (i + 1)), "Left page (count)", "Left page details"].join(",")];
+      lastData.list.forEach(r => lines.push([q(r.name), r.score, N, Math.round(100 * r.score / N) + "%",
+        ...r.per.map(v => v === true ? "correct" : v === false ? "wrong" : "no answer"),
+        r.focus.length, q(r.focus.map(x => `Q${x.n} ${x.sec}s`).join("; "))].join(",")));
+      lines.push("", "Question statistics", ["Q", "Question", "Percent correct", "Most chosen wrong answer", "Times chosen", "No answer"].join(","));
+      lastData.stats.forEach(x => lines.push([x.n, q(x.question), x.pct + "%", q(x.wrongText), x.wrongCount, x.noAnswer].join(",")));
+      const blob = new Blob(["\ufeff" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = "exam-results.csv"; a.click();
+    }
+
+    // ---------- danger zone ----------
+    $('del-input').addEventListener('input', () => { $('del-btn').disabled = $('del-input').value !== 'DELETE'; });
+
+    async function newSession() {
+      if ($('del-input').value !== 'DELETE') return;
+      $('del-btn').disabled = true; $('del-btn').innerText = "Erasing…";
+      await db.from('submissions').delete().neq('question_id', -1);
+      await db.from('focus_log').delete().neq('question_id', -1);
+      await db.from('students').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await db.from('room_state').update({ current_question: 0, game_status: 'waiting', total_students: 0, paused: false, results_open: false }).eq('id', 1);
+      location.reload();
+    }
+
+    init();
+  </script>
+</body>
+</html>
