@@ -278,7 +278,7 @@
       $('picker-sub').innerText = 'Tap a quiz to open its lobby.';
       $('quiz-list').innerHTML = QUIZZES.map((z, i) => z.error
         ? `<div class="quiz bad"><h3>${esc(z.file)}</h3><div class="problem">⚠ ${esc(z.error)}</div></div>`
-        : `<div class="quiz"><h3>${esc(z.title || z.file)}</h3><div class="file">${esc(z.file)}</div>` +
+        : `<div class="quiz"><h3>${esc(z.title || z.file)}</h3>` +
           `<div>${z.questions.length} questions · ${z.secs || SECONDS_PER_QUESTION} s each</div>` +
           `<button onclick="chooseQuiz(${i})">Use this quiz</button></div>`).join('');
     }
