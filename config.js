@@ -18,3 +18,4 @@ const EXAM_FILES = [];
 const EXAM_TITLE = "Exam time!";
 const SECONDS_PER_QUESTION = 45;
 const START_COUNTDOWN = 5;   // seconds of "Starting in…" (with a Cancel button) after you press Start
+const MUSIC_VOLUME = 40;     // 0-100: starting volume of the YouTube player (also use the tablet's own volume)
