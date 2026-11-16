@@ -3,6 +3,7 @@
 // ============================================================
 const QUIZ_TITLE = "IELTS Vocabulary";
 const QUIZ_SECONDS = 40; // 40 seconds gives them time to read the full sentences
+const QUIZ_MUSIC = "https://www.youtube.com/watch?v=QLxeNvBd7kA&list=RDQLxeNvBd7kA&start_radio=1";
 const EXAM_QUESTIONS = [
   // --- DEFINITIONS ---
   { id: 1,  question: "certain to happen; unavoidable", options: [ "perpetual ", "inevitable ", "fluctuation ", "prestige " ], correctIndex: 1 },
