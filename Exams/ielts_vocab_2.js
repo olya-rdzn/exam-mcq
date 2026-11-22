@@ -1,6 +1,6 @@
 const QUIZ_TITLE = "IELTS Vocabulary_2";
 const QUIZ_SECONDS = 40;
-const QUIZ_MUSIC = "https://www.youtube.com/watch?v=QLxeNvBd7kA&list=RDQLxeNvBd7kA&start_radio=1";
+const QUIZ_MUSIC = "https://www.youtube.com/watch?v=ujEDekhM11I";
 
 const EXAM_QUESTIONS = [
   // --- DEFINITIONS (8) ---
