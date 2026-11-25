@@ -3,7 +3,7 @@
 // ============================================================
 const QUIZ_TITLE = "IELTS Vocabulary_3";
 const QUIZ_SECONDS = 40;
-const QUIZ_MUSIC = "https://www.youtube.com/watch?v=QLxeNvBd7kA&list=RDQLxeNvBd7kA&start_radio=1";
+const QUIZ_MUSIC = "https://www.youtube.com/watch?v=eNtNLVupYns";
 const EXAM_QUESTIONS = [
   // --- DEFINITIONS (12) ---
   { id: 1,  question: "to produce a change in or have an influence on something", options: ["affect", "frame", "collapse", "commit"], correctIndex: 0 },
